@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>3D Periodic People Visualization</title>
+
+<style>
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #000;
+  font-family: Arial, sans-serif;
+}
+
+#container { width: 100vw; height: 100vh; }
+
+/* CARD */
+.element {
+  width: 120px;
+  height: 165px;
+  border-radius: 8px;
+  text-align: center;
+  color: white;
+  padding: 6px;
+  box-sizing: border-box;
+  background: #111;
+  box-shadow: 0 0 12px rgba(0,255,255,0.4);
+  transition: transform 0.3s, box-shadow 0.3s;
+  cursor: pointer;
+}
+
+.element:hover {
+  transform: scale(1.35);
+  z-index: 999;
+  box-shadow: 0 0 30px rgba(255,255,255,0.9);
+}
+
+.avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 6px;
+  object-fit: cover;
+  margin-top: 5px;
+}
+
+.name { font-size: 13px; font-weight: bold; margin-top: 4px; }
+.value { font-size: 11px; opacity: 0.9; }
+
+.details {
+  display: none;
+  font-size: 10px;
+  margin-top: 4px;
+}
+.element:hover .details { display: block; }
+
+/* MENU */
+#menu {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 999;
+}
+#menu button {
+  padding: 6px 10px;
+  margin-right: 5px;
+  cursor: pointer;
+}
+
+/* LEGEND */
+#legend {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: white;
+  font-size: 11px;
+}
+#legend .bar {
+  width: 22px;
+  height: 160px;
+  background: linear-gradient(to bottom, red, yellow, green);
+  margin: 6px 0;
+  border-radius: 4px;
+}
+</style>
+
+<!-- LIBRARIES -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS3DRenderer.js"></script>
+</head>
+
+<body>
+
+<div id="menu">
+  <button onclick="toTable()">TABLE</button>
+  <button onclick="toSphere()">SPHERE</button>
+  <button onclick="toHelix()">HELIX</button>
+  <button onclick="toGrid()">GRID</button>
+</div>
+
+<div id="legend">
+  <span>High</span>
+  <div class="bar"></div>
+  <span>Low</span>
+</div>
+
+<div id="container"></div>
+
+<script>
+/* THREE JS */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 10000);
+camera.position.z = 3000;
+
+const renderer = new THREE.CSS3DRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.getElementById("container").appendChild(renderer.domElement);
+
+const objects = [];
+let minWorth = Infinity;
+let maxWorth = -Infinity;
+
+/* COLOR */
+function worthToColor(value) {
+  const r = (value - minWorth) / (maxWorth - minWorth);
+  const hue = (1 - r) * 120;
+  return `hsl(${hue},100%,45%)`;
+}
+
+/*  PERIODIC SLOTS */
+
+const slots = [];
+const cols = 18;
+const layout = [
+  [1,18],
+  [1,2,13,14,15,16,17,18],
+  [1,2,13,14,15,16,17,18],
+  Array.from({length:18},(_,i)=>i+1),
+  Array.from({length:18},(_,i)=>i+1),
+  Array.from({length:18},(_,i)=>i+1)
+];
+
+layout.forEach((row, r) => {
+  row.forEach(c => slots.push({ col: c, row: r+1 }));
+});
+
+/* GOOGLE SHEET Assignment*/
+
+const sheetURL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRdaNfp8D7_AZLllGrEFm5qzx-QeR_Ru4w9kmpMcLqjJd6IeIM0IB8aF4q4q6ROf-3h221n9i4Y3v3s/pub?gid=843252125&single=true&output=csv";
+
+fetch(sheetURL)
+.then(res => res.text())
+.then(csv => {
+  const rows = csv.trim().split("\n").slice(1);
+
+  rows.forEach(r => {
+    const c = r.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
+    const v = parseFloat(c[5]?.replace(/[^\d.]/g,""));
+    if (!isNaN(v)) {
+      minWorth = Math.min(minWorth, v);
+      maxWorth = Math.max(maxWorth, v);
+    }
+  });
+
+  rows.forEach((r,i) => {
+    const c = r.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
+    if (!c) return;
+
+    const worth = parseFloat(c[5]?.replace(/[^\d.]/g,""));
+    if (isNaN(worth)) return;
+
+    const div = document.createElement("div");
+    div.className = "element";
+    div.style.background = worthToColor(worth);
+
+    const scale = 0.75 + 0.6 * ((worth - minWorth)/(maxWorth-minWorth));
+    div.style.transform = `scale(${scale})`;
+
+    div.innerHTML = `
+      <img class="avatar" src="${c[1]}">
+      <div class="name">${c[0]}</div>
+      <div class="value">$${worth.toLocaleString()}</div>
+      <div class="details">
+        Age: ${c[2]}<br>
+        ${c[3]}<br>
+        ${c[4]}
+      </div>
+    `;
+
+    const obj = new THREE.CSS3DObject(div);
+    obj.userData.slot = slots[i];
+    scene.add(obj);
+    objects.push(obj);
+  });
+
+  toTable();
+});
+
+/* LAYOUTS */
+const CELL_X = 150;
+const CELL_Y = 200;
+
+function toTable() {
+  objects.forEach(o => {
+    const s = o.userData.slot;
+    gsap.to(o.position,{
+      x:(s.col-1)*CELL_X -1200,
+      y:-(s.row-1)*CELL_Y +800,
+      z:0,
+      duration:1.4,
+      ease:"power2.inOut"
+    });
+  });
+}
+
+function toSphere(){
+  const r=800,l=objects.length;
+  objects.forEach((o,i)=>{
+    const p=Math.acos(-1+2*i/l);
+    const t=Math.sqrt(l*Math.PI)*p;
+    gsap.to(o.position,{
+      x:r*Math.cos(t)*Math.sin(p),
+      y:r*Math.sin(t)*Math.sin(p),
+      z:r*Math.cos(p),
+      duration:1.5
+    });
+  });
+}
+
+function toHelix(){
+  objects.forEach((o,i)=>{
+    const a=i*0.5;
+    gsap.to(o.position,{
+      x:600*Math.cos(a),
+      z:600*Math.sin(a),
+      y:i*80-800,
+      duration:1.5
+    });
+  });
+}
+
+function toGrid(){
+  objects.forEach((o,i)=>{
+    gsap.to(o.position,{
+      x:(i%5)*300-600,
+      y:-Math.floor((i%20)/5)*300+300,
+      z:Math.floor(i/20)*300-800,
+      duration:1.5
+    });
+  });
+}
+
+/* RENDER */
+function animate(){
+  requestAnimationFrame(animate);
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+
+</body>
+</html>
